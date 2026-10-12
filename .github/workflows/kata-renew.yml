@@ -3,33 +3,15 @@ name: 🔄 KataBump Auto Renew
 on:
   workflow_dispatch:
   schedule:
+    # 上游用 "4天周期门控 + 脚本剩余>1天跳过" 两个规则互相冲突，
+    # 会在到期前错过窗口（例：到期 10-16，10-14 剩余2天跳过，下次 10-18 已过期2天 → 服务器被删）。
+    # 改为每天两次（UTC 02:30 / 14:30 = 北京 10:30 / 22:30），交给脚本自己判断（剩余 <=1 天才续期），
+    # 同一天还有第二次重试机会。公开仓库 Actions 分钟数不计量。
     - cron: "30 2 * * *"
+    - cron: "30 14 * * *"
 
 jobs:
-  pre-check:
-    runs-on: ubuntu-latest
-    outputs:
-      should_run: ${{ steps.check.outputs.should_run }}
-    steps:
-      - name: 4-day cycle check (skip for manual trigger)
-        id: check
-        if: github.event_name != 'workflow_dispatch'
-        run: |
-          DAYS=$(( $(date -u +%s) / 86400 ))
-          REMAINDER=$(( $DAYS % 4 ))
-          if [ $REMAINDER -eq 0 ]; then
-            echo "should_run=true" >> $GITHUB_OUTPUT
-          else
-            echo "should_run=false" >> $GITHUB_OUTPUT
-            echo "⏭️ 不在4天周期内，跳过"
-          fi
-      - name: Always run for manual trigger
-        if: github.event_name == 'workflow_dispatch'
-        run: echo "should_run=true" >> $GITHUB_OUTPUT
-
   renew:
-    needs: pre-check
-    if: needs.pre-check.outputs.should_run != 'false'
     runs-on: ubuntu-22.04
     timeout-minutes: 30
 

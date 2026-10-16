@@ -72,13 +72,46 @@ jobs:
 
       - name: ⏱️ Commit time.txt
         if: always()
+        continue-on-error: true
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          echo "$(date +'%Y-%m-%d %H:%M:%S')" > time.txt
-          git add time.txt 2>/dev/null || true
-          git diff --cached --quiet || {
-            git commit -m "⏱️ $(date +'%Y-%m-%d %H:%M:%S')"
-            git pull --rebase origin main
-            git push origin HEAD:main
-          }
+
+          # 心跳写入：并行/重试时 time.txt 易冲突，失败不拖垮整次续期
+          for i in 1 2 3; do
+            echo "$(date +'%Y-%m-%d %H:%M:%S')" > time.txt
+            git add time.txt
+
+            if git diff --cached --quiet; then
+              echo "time.txt unchanged, skip"
+              exit 0
+            fi
+
+            git commit -m "⏱️ $(date +'%Y-%m-%d %H:%M:%S')" || true
+
+            if ! git pull --rebase origin main; then
+              echo "rebase conflict on attempt $i, rewriting time.txt"
+              echo "$(date +'%Y-%m-%d %H:%M:%S')" > time.txt
+              git add time.txt
+              if ! GIT_EDITOR=true git rebase --continue; then
+                git rebase --abort || true
+                git fetch origin main
+                git reset --soft origin/main
+                sleep $((i * 2))
+                continue
+              fi
+            fi
+
+            if git push origin HEAD:main; then
+              echo "time.txt committed and pushed (attempt $i)"
+              exit 0
+            fi
+
+            echo "push failed on attempt $i, soft-reset to origin/main and retry"
+            git fetch origin main
+            git reset --soft origin/main
+            sleep $((i * 2))
+          done
+
+          echo "⚠️ warning: failed to commit time.txt after 3 attempts (renew result unaffected)"
+          exit 0

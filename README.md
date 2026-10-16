@@ -54,7 +54,7 @@ Settings → Actions → General → Workflow permissions → ✅ **Read and wri
 
 Actions 页面 → 选中 **KataBump Auto Renew** → Enable workflow → 可手动 **Run workflow** 测试
 
-> 定时：每天两次（UTC 02:30 / 14:30 ≈ 北京 10:30 / 22:30）。脚本仅在剩余 ≤1 天才真正续期。
+> 定时：每天两次（UTC 22:37 / 14:37 ≈ 北京 06:37 / 22:37）。脚本仅在剩余 ≤1 天才真正续期。
 
 ## 🔧 续期流程
 

@@ -241,9 +241,9 @@ class KataBumpRenew:
                     logger.info(f"ℹ️ {notice}")
                     return True, notice
                 elif days_diff < 0:
-                    notice = f"⚠️ {self.masked}\n📅 已过期 {abs(days_diff)} 天: {expiry_text}\n⚠️ 可能已被删除!"
-                    logger.warning(notice)
-                    return False, notice
+                    # 过期后面板常仍显示 “You can still renew it.”，不要直接放弃
+                    logger.warning(
+                        f"⚠️ {self.masked} 已过期 {abs(days_diff)} 天: {expiry_text}，仍尝试 Renew")
         except Exception as e:
             logger.warning(f"⚠️ 日期检查异常: {e}，继续续期")
 

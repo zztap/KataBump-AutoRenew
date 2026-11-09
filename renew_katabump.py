@@ -224,8 +224,8 @@ class KataBumpRenew:
             expiry_text = expiry_el.text.strip()
             logger.info(f"⌛ {self.masked} 到期: {expiry_text}")
 
-            tz_hkt = timezone(timedelta(hours=8))
-            today = datetime.now(tz_hkt).date()
+            today = datetime.now(timezone.utc).date()
+            logger.info(f"📆 {self.masked} 对照日(UTC): {today}")
             expiry_date = None
             for fmt in ["%Y-%m-%d", "%Y/%m/%d", "%d-%m-%Y", "%d/%m/%Y"]:
                 try:
@@ -235,9 +235,13 @@ class KataBumpRenew:
                     continue
 
             if expiry_date:
+                # 平台可续窗口按 UTC 日切（北京清晨常仍算 UTC 前一天）
                 days_diff = (expiry_date - today).days
                 if days_diff > 1:
-                    notice = f"⏰ {self.masked}\n📅 未到续期日: {expiry_text}\n🔄 剩余 {days_diff} 天"
+                    notice = (
+                        f"⏰ {self.masked}\n📅 未到续期日: {expiry_text}\n"
+                        f"🔄 剩余 {days_diff} 天（UTC）"
+                    )
                     logger.info(f"ℹ️ {notice}")
                     return True, notice
                 elif days_diff < 0:
@@ -279,6 +283,14 @@ class KataBumpRenew:
             alerts = self.driver.find_elements(By.CSS_SELECTOR, ".alert-danger")
             if alerts and alerts[0].is_displayed():
                 msg = alerts[0].text.strip().replace('×', '')
+                # 平台窗口未开：不算失败，留给后续 cron（避免 Actions 误红）
+                if re.search(r"can'?t renew your server yet|will be able to as of", msg, re.I):
+                    notice = (
+                        f"⏳ {self.masked}\n平台暂不可续（窗口未开）\n"
+                        f"{msg}\n📅 当前到期: {expiry_text}"
+                    )
+                    logger.info(notice)
+                    return True, notice
                 return False, f"⚠️ {self.masked}\n续期失败: {msg}"
 
             final_el = self.driver.find_element(
@@ -312,7 +324,9 @@ class KataBumpRenew:
                 if success:
                     return True, msg
                 last_error = msg
-                if "续期失败" in msg or "已过期" in msg:
+                # 业务拒绝（窗口未开/真失败）不必空转重试登录
+                if ("续期失败" in msg or "已过期" in msg
+                        or "暂不可续" in msg or "can't renew" in msg.lower()):
                     break
             except Exception as e:
                 last_error = str(e)[:80]
@@ -395,13 +409,19 @@ def main():
             logger.info(f"⏳ 等待 {wait/1000:.0f}s...")
             sleep_ms(wait)
 
-    # 汇总
-    summary = f"📊 续期汇总: {success_count}/{len(accounts)} 成功\n\n"
+    # 汇总：窗口未开视为跳过，只有硬失败才让 Actions 变红
+    skipped = sum(1 for r in results if r['ok'] and ("暂不可续" in r['msg'] or "未到续期日" in r['msg']))
+    renewed = success_count - skipped
+    failed = len(accounts) - success_count
+    summary = (
+        f"📊 续期汇总: 成功 {renewed} / 跳过 {skipped} / 失败 {failed}"
+        f"（账号 {len(accounts)}）\n\n"
+    )
     summary += "\n\n".join([r['msg'] for r in results])
     logger.info(summary)
     send_tg(summary)
 
-    sys.exit(0 if success_count == len(accounts) else 1)
+    sys.exit(0 if failed == 0 else 1)
 
 
 if __name__ == "__main__":
